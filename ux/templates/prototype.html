@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>[Project name] – UX prototype</title>
+<!--
+  tv-ux prototype template
+  ========================
+  HOW TO USE (for Claude):
+  1. Replace [Project name] above and in CONFIG.
+  2. Fill CONFIG.roles with the roles from spec section 3.3.
+  3. Fill DATA with the confirmed realistic sample data (spec section 9.2).
+  4. Fill NAV with the navigation per role (spec section 5.4).
+  5. Add one entry to SCREENS per screen ID in the inventory (spec section 6.3).
+     Each screen lists its roles, its applicable states (spec section 7.3), notes
+     (purpose, flows, decision IDs), and a render(ctx) function returning HTML.
+  6. Delete the three EXAMPLE screens and the example data once real ones exist.
+
+  BUILDING BLOCKS:
+  - data-go="S-03"            navigate to a screen
+  - data-param="SO-10421"     pass a value to that screen (ctx.params.id)
+  - data-toast="Order saved"  show a toast (use copy deck text)
+  - ui.loading(), ui.empty(title, text, actionHtml), ui.error(text, retryScreenId),
+    ui.noPermission() give consistent standard states.
+  - Tables: use class "rtable" and data-label on each <td>; they become cards on
+    mobile automatically.
+  - Styling: only use the --ds-* variables. To apply a design system, change the
+    values in :root and nothing else.
+  - Responsive rules use @container (the stage), so the device switcher shows true
+    desktop, tablet and mobile layouts.
+  No external libraries, fonts or images. Must work offline.
+-->
+<style>
+  :root {
+    /* Grey-box defaults. Map design system values here (see design-system.md). */
+    --ds-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ds-bg: #f2f2f2;
+    --ds-surface: #ffffff;
+    --ds-surface-alt: #e8e8e8;
+    --ds-text: #1f1f1f;
+    --ds-text-muted: #595959;
+    --ds-border: #c4c4c4;
+    --ds-primary: #3d3d3d;
+    --ds-on-primary: #ffffff;
+    --ds-focus: #1f1f1f;
+    --ds-success: #3d3d3d;
+    --ds-warning: #3d3d3d;
+    --ds-error: #3d3d3d;
+    --ds-radius: 4px;
+    --ds-space: 8px;
+    --ds-text-sm: 0.875rem;
+    --ds-text-md: 1rem;
+    --ds-text-lg: 1.25rem;
+    --ds-text-xl: 1.625rem;
+
+    /* Review toolbar (not part of the product design) */
+    --rv-bg: #2e2e2e;
+    --rv-text: #f5f5f5;
+    --rv-control: #454545;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: var(--ds-font); color: var(--ds-text); background: #d9d9d9; }
+  :focus-visible { outline: 3px solid var(--ds-focus); outline-offset: 2px; }
+  .stage a { color: var(--ds-link, var(--ds-text)); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* ---------- Review toolbar ---------- */
+  .review-bar { position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; gap: 12px;
+    align-items: center; padding: 8px 16px; background: var(--rv-bg); color: var(--rv-text);
+    font: 14px/1.3 system-ui, sans-serif; }
+  .review-bar :focus-visible { outline-color: #ffffff; }
+  .review-bar .rv-title { font-weight: 600; margin-right: auto; }
+  .review-bar label { display: flex; gap: 6px; align-items: center; }
+  .review-bar select, .review-bar button { font: inherit; color: var(--rv-text); background: var(--rv-control);
+    border: 1px solid #6b6b6b; border-radius: 4px; padding: 4px 8px; }
+  .review-bar button[aria-pressed="true"] { background: #f5f5f5; color: #1f1f1f; }
+  .rv-group { display: flex; gap: 4px; }
+
+  /* ---------- Stage (device frame) ---------- */
+  .stage-wrap { display: flex; gap: 16px; padding: 16px; overflow-x: auto; align-items: flex-start; }
+  .stage { container-type: inline-size; container-name: stage; background: var(--ds-bg);
+    width: 100%; margin: 0 auto; min-height: calc(100vh - 90px); border: 1px solid #a6a6a6; flex-shrink: 0; }
+  .stage[data-device="desktop"] { width: 1280px; }
+  .stage[data-device="tablet"] { width: 820px; }
+  .stage[data-device="mobile"] { width: 390px; }
+  .notes { width: 300px; flex-shrink: 0; background: #fff; border: 1px solid #a6a6a6; padding: 16px;
+    font-size: var(--ds-text-sm); line-height: 1.5; }
+  .notes[hidden] { display: none; }
+  .notes h2 { font-size: var(--ds-text-md); margin: 0 0 8px; }
+
+  /* ---------- App shell ---------- */
+  .app { display: grid; grid-template-columns: 220px 1fr; min-height: inherit; }
+  .app-nav { background: var(--ds-surface); border-right: 1px solid var(--ds-border); padding: calc(var(--ds-space) * 2); }
+  .app-nav .brand { display: block; height: 32px; background: var(--ds-surface-alt); border-radius: var(--ds-radius);
+    margin-bottom: calc(var(--ds-space) * 3); font-size: var(--ds-text-sm); line-height: 32px; text-align: center; color: var(--ds-text-muted); }
+  .app-nav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .app-nav a { display: block; padding: 8px 12px; border-radius: var(--ds-radius); color: var(--ds-text); text-decoration: none; }
+  .app-nav a[aria-current="page"] { background: var(--ds-surface-alt); font-weight: 600; }
+  .app-main { padding: calc(var(--ds-space) * 3); min-width: 0; }
+  .page-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: calc(var(--ds-space) * 3); }
+  h1 { font-size: var(--ds-text-xl); margin: 0; }
+  h2 { font-size: var(--ds-text-lg); margin: 0 0 12px; }
+  .muted { color: var(--ds-text-muted); }
+  .crumbs { font-size: var(--ds-text-sm); margin-bottom: 8px; }
+  .crumbs a { color: var(--ds-text-muted); }
+
+  /* ---------- Components ---------- */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 0 16px;
+    border-radius: var(--ds-radius); border: 1px solid var(--ds-primary); background: var(--ds-surface); color: var(--ds-primary);
+    font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .btn-primary { background: var(--ds-primary); color: var(--ds-on-primary); }
+  .card { background: var(--ds-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: calc(var(--ds-space) * 2); }
+  .grid { display: grid; gap: calc(var(--ds-space) * 2); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .stat { font-size: var(--ds-text-xl); font-weight: 700; }
+  .tag { display: inline-block; padding: 2px 8px; border: 1px solid var(--ds-text-muted); border-radius: 999px; font-size: var(--ds-text-sm); }
+  .field { display: grid; gap: 4px; margin-bottom: 12px; }
+  .field label { font-weight: 600; font-size: var(--ds-text-sm); }
+  .field input, .field select, .field textarea { font: inherit; min-height: 40px; padding: 8px; border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius); background: var(--ds-surface); color: var(--ds-text); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .img-box { background: var(--ds-surface-alt); border: 1px dashed var(--ds-border); display: grid; place-items: center;
+    color: var(--ds-text-muted); font-size: var(--ds-text-sm); min-height: 120px; }
+  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; }
+  dl.kv dt { color: var(--ds-text-muted); }
+  dl.kv dd { margin: 0; }
+
+  /* Responsive table: becomes cards on narrow stages */
+  .table-wrap { overflow-x: auto; }
+  table.rtable { width: 100%; border-collapse: collapse; background: var(--ds-surface); }
+  .rtable th, .rtable td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--ds-border); }
+  .rtable th { font-size: var(--ds-text-sm); color: var(--ds-text-muted); }
+
+  /* Standard states */
+  .state-box { text-align: center; padding: 48px 16px; }
+  .skeleton { background: var(--ds-surface-alt); border-radius: var(--ds-radius); height: 16px; margin: 10px 0; }
+  .alert { border: 1px solid var(--ds-text); border-left-width: 6px; padding: 12px 16px; background: var(--ds-surface); border-radius: var(--ds-radius); }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ds-text); color: var(--ds-surface);
+    padding: 12px 20px; border-radius: var(--ds-radius); z-index: 60; max-width: 90vw; }
+  .toast[hidden] { display: none; }
+
+  /* ---------- Breakpoints (based on the stage, not the window) ---------- */
+  @container stage (max-width: 900px) {
+    .app { grid-template-columns: 1fr; }
+    .app-nav { border-right: 0; border-bottom: 1px solid var(--ds-border); }
+    .app-nav ul { display: flex; overflow-x: auto; }
+    .app-nav .brand { margin-bottom: 12px; }
+  }
+  @container stage (max-width: 600px) {
+    .app-main { padding: calc(var(--ds-space) * 2); }
+    .rtable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .rtable, .rtable tbody, .rtable tr, .rtable td { display: block; width: 100%; }
+    .rtable tr { border: 1px solid var(--ds-border); border-radius: var(--ds-radius); margin-bottom: 12px; background: var(--ds-surface); }
+    .rtable td { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--ds-surface-alt); }
+    .rtable td::before { content: attr(data-label); color: var(--ds-text-muted); font-size: var(--ds-text-sm); }
+    .page-head .btn { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header class="review-bar" aria-label="Prototype controls">
+  <span class="rv-title" id="rv-title">[Project name] prototype</span>
+  <label>Screen <select id="rv-screen"></select></label>
+  <label>Role <select id="rv-role"></select></label>
+  <label>State <select id="rv-state"></select></label>
+  <div class="rv-group" role="group" aria-label="Device">
+    <button type="button" data-device="full" aria-pressed="true">Full</button>
+    <button type="button" data-device="desktop" aria-pressed="false">Desktop</button>
+    <button type="button" data-device="tablet" aria-pressed="false">Tablet</button>
+    <button type="button" data-device="mobile" aria-pressed="false">Mobile</button>
+  </div>
+  <button type="button" id="rv-notes" aria-pressed="false">Notes</button>
+</header>
+
+<div class="stage-wrap">
+  <div class="stage" id="stage" data-device="full"></div>
+  <aside class="notes" id="notes" hidden aria-label="Screen notes"></aside>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+/* ===================== CONFIG ===================== */
+const CONFIG = {
+  project: "[Project name]",
+  startScreen: "S-01",
+  // Roles from spec section 3.3
+  roles: [
+    { id: "R-example-user", label: "Example user" },
+    { id: "R-example-admin", label: "Example admin" }
+  ]
+};
+
+/* ===================== SAMPLE DATA (spec 9.2) ===================== */
+// EXAMPLE data: replace with the confirmed realistic data set.
+const DATA = {
+  user: { name: "Anita Rao", company: "Example Industries Pvt Ltd" },
+  records: [
+    { id: "SO-10421", title: "Control board, 4-layer", qty: 500, status: "In production", updated: "12 Nov 2026" },
+    { id: "SO-10418", title: "Power supply PCB, 2-layer", qty: 1200, status: "Shipped", updated: "10 Nov 2026" },
+    { id: "SO-10397", title: "Sensor module with an unusually long product description to test wrapping", qty: 50, status: "Awaiting payment", updated: "28 Oct 2026" }
+  ]
+};
+
+/* ===================== NAVIGATION (spec 5.4) ===================== */
+const NAV = [
+  { label: "Home", screen: "S-01", roles: ["R-example-user", "R-example-admin"] },
+  { label: "Records", screen: "S-02", roles: ["R-example-user", "R-example-admin"] }
+];
+
+/* ===================== SCREENS (spec 6.3 + 7.3) ===================== */
+const SCREENS = {
+  // EXAMPLE screen: delete when real screens exist.
+  "S-01": {
+    title: "Home",
+    module: "Example",
+    roles: ["R-example-user", "R-example-admin"],
+    states: ["default", "loading", "empty", "error"],
+    notes: "<p><b>Purpose:</b> Show what needs attention first.</p><p><b>Flows:</b> F-01</p><p><b>Decisions:</b> D-001</p>",
+    render(ctx) {
+      if (ctx.state === "loading") return ui.loading();
+      if (ctx.state === "error") return ui.error("We couldn't load your summary. Check your connection and try again.", "S-01");
+      if (ctx.state === "empty") return ui.empty("No records yet", "Your records will appear here once they're created.", "");
+      const r = ctx.data.records;
+      return `
+        <div class="page-head"><h1>Welcome back, ${esc(ctx.data.user.name.split(" ")[0])}</h1></div>
+        <div class="grid">
+          <a class="card" href="#S-02" data-go="S-02"><div class="muted">Open records</div><div class="stat">${r.length}</div></a>
+          <div class="card"><div class="muted">Needs your action</div><div class="stat">1</div></div>
+        </div>`;
+    }
+  },
+
+  // EXAMPLE screen: list with responsive table.
+  "S-02": {
+    title: "Records list",
+    module: "Example",
+    roles: ["R-example-user", "R-example-admin"],
+    states: ["default", "loading", "empty", "no-results", "error"],
+    notes: "<p><b>Purpose:</b> Find a record quickly.</p><p><b>Flows:</b> F-01, F-02</p>",
+    render(ctx) {
+      const head = `<div class="page-head"><h1>Records</h1></div>
+        <div class="toolbar">
+          <div class="field" style="margin:0;flex:1;min-width:200px"><label for="q">Search records</label><input id="q" type="search" placeholder="Record number or title"></div>
+        </div>`;
+      if (ctx.state === "loading") return head + ui.loading();
+      if (ctx.state === "error") return head + ui.error("We couldn't load your records. Try again in a moment.", "S-02");
+      if (ctx.state === "empty") return head + ui.empty("No records yet", "Records you create will be listed here.", "");
+      if (ctx.state === "no-results") return head + ui.empty("No matching records", "Try a different number or clear the search.", `<button class="btn" type="button" data-go="S-02">Clear search</button>`);
+      const rows = ctx.data.records.map(x => `
+        <tr>
+          <td data-label="Record"><a href="#S-03" data-go="S-03" data-param="${esc(x.id)}">${esc(x.id)}</a></td>
+          <td data-label="Title">${esc(x.title)}</td>
+          <td data-label="Quantity">${x.qty.toLocaleString("en-IN")}</td>
+          <td data-label="Status"><span class="tag">${esc(x.status)}</span></td>
+          <td data-label="Updated">${esc(x.updated)}</td>
+        </tr>`).join("");
+      return head + `<div class="table-wrap"><table class="rtable">
+        <thead><tr><th>Record</th><th>Title</th><th>Quantity</th><th>Status</th><th>Updated</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+    }
+  },
+
+  // EXAMPLE screen: detail page using a parameter.
+  "S-03": {
+    title: "Record detail",
+    module: "Example",
+    roles: ["R-example-user", "R-example-admin"],
+    states: ["default", "loading", "error"],
+    notes: "<p><b>Purpose:</b> See full status and act on one record.</p><p><b>Flows:</b> F-02</p>",
+    render(ctx) {
+      if (ctx.state === "loading") return ui.loading();
+      if (ctx.state === "error") return ui.error("We couldn't load this record. Try again.", "S-03");
+      const x = ctx.data.records.find(r => r.id === ctx.params.id) || ctx.data.records[0];
+      const adminAction = ctx.role === "R-example-admin"
+        ? `<button class="btn" type="button" data-toast="Record archived">Archive record</button>` : "";
+      return `
+        <nav class="crumbs" aria-label="Breadcrumb"><a href="#S-02" data-go="S-02">Records</a> / ${esc(x.id)}</nav>
+        <div class="page-head"><h1>${esc(x.id)}</h1>
+          <div class="toolbar" style="margin:0">${adminAction}
+            <button class="btn btn-primary" type="button" data-toast="Download started">Download PDF</button></div></div>
+        <div class="card"><dl class="kv">
+          <dt>Title</dt><dd>${esc(x.title)}</dd>
+          <dt>Quantity</dt><dd>${x.qty.toLocaleString("en-IN")}</dd>
+          <dt>Status</dt><dd><span class="tag">${esc(x.status)}</span></dd>
+          <dt>Last updated</dt><dd>${esc(x.updated)}</dd>
+        </dl></div>`;
+    }
+  }
+};
+
+/* ===================== STANDARD STATES ===================== */
+const ui = {
+  loading() {
+    return `<div aria-busy="true" aria-label="Loading">${'<div class="skeleton"></div>'.repeat(6)}</div>`;
+  },
+  empty(title, text, actionHtml) {
+    return `<div class="state-box card"><h2>${esc(title)}</h2><p class="muted">${esc(text)}</p>${actionHtml || ""}</div>`;
+  },
+  error(text, retryScreenId) {
+    return `<div class="alert" role="alert"><p style="margin-top:0">${esc(text)}</p>
+      <button class="btn" type="button" data-go="${esc(retryScreenId)}" data-state="default">Try again</button></div>`;
+  },
+  noPermission() {
+    return `<div class="state-box card"><h2>You don't have access to this page</h2>
+      <p class="muted">Ask your administrator if you need access.</p>
+      <button class="btn" type="button" data-go="${CONFIG.startScreen}">Go to home</button></div>`;
+  }
+};
+
+/* ===================== ENGINE (no need to edit) ===================== */
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+const view = { screen: CONFIG.startScreen, role: CONFIG.roles[0].id, state: "default", params: {}, notes: false };
+const $ = id => document.getElementById(id);
+
+function initControls() {
+  document.title = CONFIG.project + " – UX prototype";
+  $("rv-title").textContent = CONFIG.project + " prototype";
+  $("rv-role").innerHTML = CONFIG.roles.map(r => `<option value="${esc(r.id)}">${esc(r.label)}</option>`).join("");
+  const modules = {};
+  Object.entries(SCREENS).forEach(([id, s]) => { (modules[s.module] = modules[s.module] || []).push([id, s]); });
+  $("rv-screen").innerHTML = Object.entries(modules).map(([m, list]) =>
+    `<optgroup label="${esc(m)}">${list.map(([id, s]) => `<option value="${esc(id)}">${esc(id)} ${esc(s.title)}</option>`).join("")}</optgroup>`
+  ).join("");
+  $("rv-screen").onchange = e => go(e.target.value, {}, "default");
+  $("rv-role").onchange = e => { view.role = e.target.value; render(); };
+  $("rv-state").onchange = e => { view.state = e.target.value; render(); };
+  document.querySelectorAll(".rv-group button").forEach(b => b.onclick = () => {
+    document.querySelectorAll(".rv-group button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    $("stage").dataset.device = b.dataset.device;
+  });
+  $("rv-notes").onclick = () => {
+    view.notes = !view.notes;
+    $("rv-notes").setAttribute("aria-pressed", view.notes);
+    $("notes").hidden = !view.notes;
+  };
+}
+
+function go(screen, params, state) {
+  if (!SCREENS[screen]) { toast("Screen " + screen + " is not in this prototype yet"); return; }
+  view.screen = screen; view.params = params || {}; view.state = state || "default";
+  if (location.hash.slice(1) !== screen) history.pushState(null, "", "#" + screen);
+  render();
+  const h = $("stage").querySelector("h1");
+  if (h) { h.setAttribute("tabindex", "-1"); h.focus({ preventScroll: true }); }
+}
+
+function render() {
+  const s = SCREENS[view.screen];
+  if (!s.states.includes(view.state)) view.state = "default";
+  $("rv-screen").value = view.screen;
+  $("rv-role").value = view.role;
+  $("rv-state").innerHTML = s.states.map(st => `<option value="${esc(st)}">${esc(st)}</option>`).join("");
+  $("rv-state").value = view.state;
+
+  const allowed = s.roles.includes(view.role);
+  const ctx = { state: view.state, role: view.role, data: DATA, params: view.params };
+  const content = allowed ? s.render(ctx) : ui.noPermission();
+  const navItems = NAV.filter(n => n.roles.includes(view.role)).map(n =>
+    `<li><a href="#${esc(n.screen)}" data-go="${esc(n.screen)}"${n.screen === view.screen ? ' aria-current="page"' : ""}>${esc(n.label)}</a></li>`).join("");
+
+  $("stage").innerHTML = `<div class="app">
+      <nav class="app-nav" aria-label="Main"><span class="brand">Logo</span><ul>${navItems}</ul></nav>
+      <main class="app-main">${content}</main>
+    </div>`;
+  $("notes").innerHTML = `<h2>${esc(view.screen)} ${esc(s.title)}</h2>
+    <p class="muted">Roles: ${s.roles.map(esc).join(", ")}<br>States: ${s.states.map(esc).join(", ")}</p>${s.notes || ""}`;
+}
+
+let toastTimer;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3000);
+}
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-go], [data-toast]");
+  if (!el || !$("stage").contains(el)) return;
+  e.preventDefault();
+  if (el.dataset.toast) toast(el.dataset.toast);
+  if (el.dataset.go) go(el.dataset.go, el.dataset.param ? { id: el.dataset.param } : {}, el.dataset.state || "default");
+});
+window.addEventListener("popstate", () => {
+  const id = location.hash.slice(1);
+  if (SCREENS[id]) { view.screen = id; view.state = "default"; render(); }
+});
+
+initControls();
+const initial = location.hash.slice(1);
+go(SCREENS[initial] ? initial : CONFIG.startScreen);
+</script>
+</body>
+</html>
